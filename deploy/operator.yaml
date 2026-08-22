@@ -15,9 +15,9 @@ metadata:
   name: betterstack-gateway-operator
   namespace: betterstack-gateway-operator
 ---
-# Read one resource type, cluster-wide, and nothing else. There is deliberately no
-# write verb anywhere: ownership of a monitor is recorded in the monitoring provider's
-# own monitor group, so this operator never annotates or patches anything a team owns.
+# Read-only throughout. There is deliberately no write verb anywhere: ownership of a
+# monitor is recorded in Better Stack's own monitor group, so this operator never
+# annotates or patches anything a team owns.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -26,6 +26,15 @@ rules:
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["httproutes"]
     verbs: ["get", "list", "watch"]
+  # kopf resolves what it watches through the CRD definitions and the namespace list.
+  # Without these it starts, reports "changes will not be noticed", and then quietly
+  # does nothing — so they are required, not optional hardening.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -82,7 +91,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: operator
-          image: ghcr.io/sevenlabnl/betterstack-gateway-operator:0.1.0
+          image: ghcr.io/sevenlabnl/betterstack-gateway-operator:0.1.1
           envFrom:
             - configMapRef:
                 name: betterstack-gateway-operator

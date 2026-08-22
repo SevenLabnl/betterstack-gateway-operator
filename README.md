@@ -36,7 +36,8 @@ whoever deployed the app, and it breaks the moment someone recreates the resourc
 without carrying the annotation across. Instead every monitor goes into one Better
 Stack *monitor group* named after the cluster, and that group is the record of what we
 own. The operator therefore needs no write access to anything in Kubernetes — its
-`ClusterRole` is `get`, `list` and `watch` on `httproutes`, and nothing else.
+`ClusterRole` is read-only: `httproutes`, plus the `customresourcedefinitions` and
+`namespaces` that kopf reads to resolve what it is watching.
 
 A monitor you made by hand, outside that group, is never touched.
 
@@ -61,7 +62,7 @@ one usually do — produce one monitor, not two.
 ## Installing
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/SevenLabnl/betterstack-gateway-operator/v0.1.0/deploy/operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/SevenLabnl/betterstack-gateway-operator/v0.1.1/deploy/operator.yaml
 ```
 
 Then the two things that differ per cluster, which are not in that file because one of

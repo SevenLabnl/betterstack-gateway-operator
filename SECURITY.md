@@ -10,10 +10,12 @@ rather than as a public issue.
 
 Worth knowing before you install it.
 
-**In the cluster:** `get`, `list` and `watch` on `httproutes`, cluster-wide. There is
-no write verb in its `ClusterRole` — it never annotates, patches or deletes anything in
-Kubernetes. That is possible because ownership of a monitor is recorded in Better Stack
-rather than on your resources.
+**In the cluster:** cluster-wide read, and only read. `get`, `list` and `watch` on
+`httproutes`, plus `list` and `watch` on `customresourcedefinitions` and `namespaces`,
+which kopf needs to resolve the resource it watches. There is no write verb in its
+`ClusterRole` — it never annotates, patches or deletes anything in Kubernetes. That is
+possible because ownership of a monitor is recorded in Better Stack rather than on
+your resources.
 
 **Outside the cluster:** it holds a Better Stack API token with write access, and uses
 it to create, update and delete monitors, and to create one monitor group. It confines

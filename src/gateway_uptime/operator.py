@@ -113,7 +113,9 @@ async def on_route_event(event, meta, logger, **_):
     spec, and we do not need one — the reconciler recomputes the desired set from
     whatever is left.
     """
-    kind = event.get("type", "SYNC").lower()
+    # `type` is present but None for the synthetic events kopf emits when it first
+    # lists what already exists, so a default argument never fires
+    kind = (event.get("type") or "SYNC").lower()
     await reconcile("route %s/%s %s" % (meta.get("namespace"), meta.get("name"), kind),
                     logger)
 
