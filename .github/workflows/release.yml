@@ -12,9 +12,9 @@ permissions:
 
 jobs:
   test:
-    # GitHub-hosted: gratis voor publieke repositories, en het houdt pull requests
-    # vanaf een fork van onze eigen clusters af. De self-hosted pool bestond alleen
-    # omdat de spending limit privérepo's blokkeerde.
+    # GitHub-hosted: free for public repositories, and it keeps pull requests from
+    # forks off our own clusters. The self-hosted pool existed only because the
+    # organisation spending limit blocks Actions on private repositories.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
