@@ -62,7 +62,7 @@ one usually do — produce one monitor, not two.
 ## Installing
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/SevenLabnl/betterstack-gateway-operator/v0.2.0/deploy/operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/SevenLabnl/betterstack-gateway-operator/v0.2.1/deploy/operator.yaml
 ```
 
 Then the two things that differ per cluster, which are not in that file because one of

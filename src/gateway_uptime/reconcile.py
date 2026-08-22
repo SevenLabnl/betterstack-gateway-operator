@@ -73,6 +73,11 @@ def run(routes: list[dict], provider: Provider, cfg: Config) -> dict[str, int]:
     p = compute(routes, provider, cfg)
     if p.empty:
         log.debug("in sync: %s", p.summary())
-        return {"created": 0, "updated": 0, "deleted": 0, "failed": 0}
+        return {"created": 0, "updated": 0, "deleted": 0, "failed": 0, "planned": 0}
     log.info("reconciling: %s", p.summary())
-    return apply(p, provider, cfg)
+    result = apply(p, provider, cfg)
+    # separate from what was carried out: a dry run plans everything and does nothing,
+    # and a caller that only looks at what happened would report it as being in sync —
+    # the one conclusion dry run must never lead to
+    result["planned"] = len(p.create) + len(p.update) + len(p.delete)
+    return result

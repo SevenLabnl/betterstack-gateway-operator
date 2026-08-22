@@ -131,12 +131,25 @@ def test_run_ignores_excluded_hostnames():
     assert prov.created == []
 
 
-def test_dry_run_changes_nothing():
+def test_dry_run_changes_nothing_but_says_it_would_have():
+    # the counts are all zero because nothing was done; `planned` is what stops a
+    # caller concluding there was nothing to do, which is the one thing a dry run
+    # must never claim
     cfg = Config(token="t", cluster_name="c", dry_run=True)
     prov = FakeProvider(existing=[have("9", "https://old.example.com/")])
     res = run([route("acme", "shop", ["shop.example.com"])], prov, cfg)
     assert prov.created == [] and prov.deleted == []
-    assert res == {"created": 0, "updated": 0, "deleted": 0, "failed": 0}
+    assert res["created"] == 0 and res["deleted"] == 0
+    assert res["planned"] == 2  # one create, one delete
+
+
+def test_nothing_to_do_plans_nothing():
+    w = want("https://shop.example.com/", name="acme/shop",
+             codes=CFG.expected_status_codes)
+    prov = FakeProvider(existing=[have("1", w.url, name="acme/shop",
+                                       codes=CFG.expected_status_codes)])
+    res = run([route("acme", "shop", ["shop.example.com"])], prov, CFG)
+    assert res["planned"] == 0
 
 
 def test_one_failing_call_does_not_abandon_the_rest():
