@@ -202,3 +202,33 @@ def test_recognising_a_redirect_only_route():
     assert is_redirect_only(redirect_route("web-r", hosts=["a.example.com"]))
     # no rules at all is not a redirect either
     assert not is_redirect_only(route(hosts=["a.example.com"]))
+
+
+def test_a_path_on_the_serving_route_does_not_leave_the_redirect_behind():
+    # the case that produced two monitors for api.sluis.ai in production: the serving
+    # route was told to check /healthz and its :80 companion kept claiming the root
+    ms = monitors_for_all([
+        backend_route("api", hosts=["api.example.com"],
+                      annotations={"betterstack.sevenlab.nl/path": "/healthz"}),
+        redirect_route("api-redirect", hosts=["api.example.com"]),
+    ], CFG)
+    assert urls(ms) == ["https://api.example.com/healthz"]
+
+
+def test_a_hostname_served_only_by_a_redirect_still_gets_one():
+    # www.sluis.ai answers 308 to the apex and serves nothing else; the redirect is the
+    # whole product there
+    ms = monitors_for_all([
+        redirect_route("www", hosts=["www.example.com"]),
+        backend_route("web", hosts=["example.com"]),
+    ], CFG)
+    assert urls(ms) == ["https://example.com/", "https://www.example.com/"]
+
+
+def test_the_redirect_is_ignored_even_without_annotations():
+    ms = monitors_for_all([
+        backend_route("web", hosts=["shop.example.com"]),
+        redirect_route("web-redirect", hosts=["shop.example.com"]),
+    ], CFG)
+    assert len(ms) == 1
+    assert ms[0].route == "web"

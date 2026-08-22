@@ -108,23 +108,33 @@ def opted_out_hostnames(routes: list[dict]) -> set[str]:
 
 
 def monitors_for_all(routes: list[dict], cfg: Config) -> list[DesiredMonitor]:
-    """The complete desired set, deduplicated.
+    """The complete desired set.
 
-    Two routes can legitimately claim the same hostname, so the same URL can be asked
-    for twice. The one that serves a backend wins over one that only redirects, so the
-    monitor is named after the thing being monitored rather than after whichever route
-    happened to sort first.
+    A hostname is normally served by two routes: the real one and a companion on :80
+    that only redirects to it. Where a serving route exists, the redirect is ignored
+    entirely — it is plumbing, not a thing to check. Deduplicating on the URL alone was
+    not enough for that: give the serving route a path annotation and its redirect goes
+    on claiming the root, which is two monitors for one hostname and one of them
+    checking a 404.
+
+    A hostname served *only* by a redirect is different. www.example.com answering 308
+    to the apex is the whole product there, and it still gets a monitor.
     """
     excluded = opted_out_hostnames(routes)
-    chosen: dict[str, tuple[bool, DesiredMonitor]] = {}
 
+    served: set[str] = set()
+    for r in routes:
+        if not is_redirect_only(r):
+            served.update(_hostnames(r))
+
+    chosen: dict[str, DesiredMonitor] = {}
     for r in routes:
         redirect_only = is_redirect_only(r)
         for m in monitors_for(r, cfg):
             if m.hostname in excluded:
                 continue
-            current = chosen.get(m.key)
-            if current is None or (current[0] and not redirect_only):
-                chosen[m.key] = (redirect_only, m)
+            if redirect_only and m.hostname in served:
+                continue
+            chosen.setdefault(m.key, m)
 
-    return sorted((m for _, m in chosen.values()), key=lambda m: m.url)
+    return sorted(chosen.values(), key=lambda m: m.url)
