@@ -1,0 +1,57 @@
+name: release
+
+# Semver comes from git tags, so `git tag v0.2.0 && git push --tags` is the whole
+# release process. Nothing publishes from a branch: an image tagged 0.2.0 always
+# points at the commit that was tagged 0.2.0 and never moves.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: sevenlab-arc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  image:
+    needs: test
+    runs-on: sevenlab-arc
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/sevenlabnl/betterstack-gateway-operator
+          # 0.2.0, 0.2 and 0 all follow a release, so a deployment can pin as
+          # tightly or as loosely as it wants. `latest` only moves for a stable
+          # release — a pre-release tag like v0.3.0-rc1 must not become latest.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

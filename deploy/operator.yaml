@@ -1,0 +1,117 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: betterstack-gateway-operator
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: betterstack-gateway-operator
+  namespace: betterstack-gateway-operator
+---
+# Read one resource type, cluster-wide, and nothing else. There is deliberately no
+# write verb anywhere: ownership of a monitor is recorded in the monitoring provider's
+# own monitor group, so this operator never annotates or patches anything a team owns.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: betterstack-gateway-operator
+rules:
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: betterstack-gateway-operator
+subjects:
+  - kind: ServiceAccount
+    name: betterstack-gateway-operator
+    namespace: betterstack-gateway-operator
+roleRef:
+  kind: ClusterRole
+  name: betterstack-gateway-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: betterstack-gateway-operator
+  namespace: betterstack-gateway-operator
+data:
+  # Which hostnames never get a monitor. Everything else served by an HTTPRoute does,
+  # so a new production hostname is covered the moment it is routed — no annotation to
+  # remember, no repository to touch.
+  EXCLUDE_SUFFIXES: "7dev.nl,7test.nl,7staging.nl"
+  CHECK_FREQUENCY: "180"
+  REQUEST_TIMEOUT: "30"
+  REGIONS: "eu"
+  RESYNC_SECONDS: "900"
+  # Start here. Flip to "false" once the log shows the plan you expected.
+  DRY_RUN: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: betterstack-gateway-operator
+  namespace: betterstack-gateway-operator
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: betterstack-gateway-operator
+  template:
+    metadata:
+      labels:
+        app: betterstack-gateway-operator
+    spec:
+      serviceAccountName: betterstack-gateway-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: operator
+          image: ghcr.io/sevenlabnl/betterstack-gateway-operator:0.1.0
+          envFrom:
+            - configMapRef:
+                name: betterstack-gateway-operator
+          env:
+            - name: CLUSTER_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: betterstack-gateway-operator-cluster
+                  key: CLUSTER_NAME
+            - name: BETTERSTACK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: betterstack-gateway-operator-token
+                  key: token
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
