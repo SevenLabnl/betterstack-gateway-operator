@@ -84,10 +84,19 @@ def test_defaults_come_from_config():
     assert m.regions == CFG.regions
 
 
-def test_display_name_points_at_the_route_not_the_url():
-    # this is what Better Stack reads out loud on a call at 3am
+def test_the_monitor_is_named_after_the_hostname():
+    # Better Stack's list shows the name and not the URL, so the name has to say which
+    # hostname this is
     m = monitors_for(route(name="shop", ns="acme", hosts=["a.example.com"]), CFG)[0]
-    assert m.display_name == "acme/shop"
+    assert m.display_name == "a.example.com"
+
+
+def test_a_non_root_path_is_part_of_the_name():
+    # two checks on one host must stay distinguishable in that list
+    m = monitors_for(route(hosts=["a.example.com"],
+                           annotations={"betterstack.sevenlab.nl/path": "/healthz"}),
+                     CFG)[0]
+    assert m.display_name == "a.example.com/healthz"
 
 
 def test_hostnames_are_lowercased():
@@ -142,19 +151,20 @@ def backend_route(name, ns="team", hosts=(), annotations=None):
     }
 
 
-def test_the_serving_route_names_the_monitor_not_the_redirect():
-    # whichever sorts first must not decide: the name should say what is being served
+def test_the_serving_route_wins_over_the_redirect():
+    # both produce the same monitor, and the winner decides what the log line says —
+    # "created monitor for X (team/web)" is more use than naming the redirect
     ms = monitors_for_all([redirect_route("web-redirect", hosts=["shop.example.com"]),
                            backend_route("web", hosts=["shop.example.com"])], CFG)
     assert len(ms) == 1
-    assert ms[0].display_name == "team/web"
+    assert ms[0].route == "web"
 
 
 def test_order_of_the_pair_does_not_matter():
     ms = monitors_for_all([backend_route("web", hosts=["shop.example.com"]),
                            redirect_route("web-redirect",
                                           hosts=["shop.example.com"])], CFG)
-    assert ms[0].display_name == "team/web"
+    assert ms[0].route == "web"
 
 
 def test_opting_out_one_route_drops_the_hostname_entirely():

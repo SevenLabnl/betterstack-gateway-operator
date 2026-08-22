@@ -33,9 +33,15 @@ class DesiredMonitor:
 
     @property
     def display_name(self) -> str:
-        """Shown in Better Stack and read out loud when it calls someone at night, so
-        it says where to look rather than repeating the URL that is already there."""
-        return "%s/%s" % (self.namespace, self.route)
+        """What Better Stack shows in its monitor list and reads out loud on a call.
+
+        The hostname, because the list shows the name and nothing else — the URL is not
+        beside it, and a name like acme/shop leaves you wondering which of your
+        hostnames just went down. The path comes along when it is not the root, so two
+        checks on one host stay distinguishable.
+        """
+        path = self.url.split(self.hostname, 1)[-1]
+        return self.hostname if path in ("", "/") else self.hostname + path
 
 
 @dataclass(frozen=True)

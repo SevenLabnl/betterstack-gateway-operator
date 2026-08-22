@@ -115,7 +115,7 @@ def test_create_sends_the_fields_we_manage():
     assert mid == "5"
     assert body["monitor_type"] == "expected_status_code"
     assert body["url"] == "https://shop.example.com/"
-    assert body["pronounceable_name"] == "acme/shop"
+    assert body["pronounceable_name"] == "shop.example.com"
     assert body["expected_status_codes"] == [200, 204]
     assert body["monitor_group_id"] == 77
 
@@ -132,7 +132,7 @@ def test_update_never_moves_the_url():
     BetterStack("tok", "test-cluster", opener=http).update(existing, want())
     body = [c for c in http.calls if c[0] == "PATCH"][0][2]
     assert "url" not in body
-    assert body["pronounceable_name"] == "acme/shop"
+    assert body["pronounceable_name"] == "shop.example.com"
 
 
 def test_delete_calls_the_right_monitor():

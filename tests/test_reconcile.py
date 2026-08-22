@@ -19,7 +19,13 @@ def want(url, name="team/app", freq=180, codes=(200,), regions=("eu",)):
                           route=name.split("/")[1])
 
 
-def have(mid, url, name="team/app", freq=180, codes=(200,), regions=("eu",)):
+def have(mid, url, name=None, freq=180, codes=(200,), regions=("eu",)):
+    # standaard de naam die de operator zelf zou geven: de hostname, plus het pad als
+    # dat niet de root is
+    if name is None:
+        host = url.split("/")[2]
+        rest = url.split(host, 1)[-1]
+        name = host if rest in ("", "/") else host + rest
     return ExistingMonitor(id=mid, url=url, display_name=name, check_frequency=freq,
                            request_timeout=30, expected_status_codes=codes,
                            regions=regions)
@@ -74,9 +80,10 @@ def test_changed_field_is_planned_for_update_and_names_what_changed():
     assert diff == ["check_frequency"]
 
 
-def test_renamed_route_updates_the_monitor_name():
-    w = want("https://a.example.com/", name="acme/shop")
-    p = plan([w], [have("1", w.url, name="team/app")])
+def test_a_monitor_with_the_wrong_name_is_corrected():
+    # someone renamed it in the Better Stack UI, or it predates the naming rule
+    w = want("https://a.example.com/")
+    p = plan([w], [have("1", w.url, name="handmatig aangepast")])
     assert p.update[0][2] == ["name"]
 
 
@@ -146,7 +153,7 @@ def test_dry_run_changes_nothing_but_says_it_would_have():
 def test_nothing_to_do_plans_nothing():
     w = want("https://shop.example.com/", name="acme/shop",
              codes=CFG.expected_status_codes)
-    prov = FakeProvider(existing=[have("1", w.url, name="acme/shop",
+    prov = FakeProvider(existing=[have("1", w.url,
                                        codes=CFG.expected_status_codes)])
     res = run([route("acme", "shop", ["shop.example.com"])], prov, CFG)
     assert res["planned"] == 0
@@ -166,7 +173,7 @@ def test_nothing_to_do_calls_nothing():
     # otherwise this quietly becomes a test that an update happens
     w = want("https://shop.example.com/", name="acme/shop",
              codes=CFG.expected_status_codes)
-    prov = FakeProvider(existing=[have("1", w.url, name="acme/shop",
+    prov = FakeProvider(existing=[have("1", w.url,
                                        codes=CFG.expected_status_codes)])
     res = run([route("acme", "shop", ["shop.example.com"])], prov, CFG)
     assert prov.created == [] and prov.updated == [] and prov.deleted == []
