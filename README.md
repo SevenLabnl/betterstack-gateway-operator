@@ -92,7 +92,7 @@ team that owns your monitors is enough — it does not need account-wide rights.
 | Variable | Default | Meaning |
 |---|---|---|
 | `BETTERSTACK_TOKEN` | — | **required** |
-| `CLUSTER_NAME` | — | **required**, names the monitor group |
+| `CLUSTER_NAME` | — | **required**, names the monitor group; must be unique per cluster |
 | `EXCLUDE_SUFFIXES` | `""` | comma-separated hostname suffixes never monitored |
 | `CHECK_FREQUENCY` | `180` | seconds between checks |
 | `REQUEST_TIMEOUT` | `30` | seconds; Better Stack allows 2, 3, 5, 10, 15, 30, 45, 60 |
@@ -135,6 +135,34 @@ its own.
 Deletion is handled there rather than by a finalizer, deliberately. A finalizer that
 cannot reach Better Stack blocks the deletion of someone's route, which trades a stale
 monitor for a stuck cluster. A stale monitor for a few minutes is the better failure.
+
+## Uninstalling
+
+Removing the operator leaves every monitor exactly where it is, on purpose. There is no
+finalizer and there will not be one.
+
+Uninstalling an operator usually means reinstalling it, moving it, or switching it off
+for an afternoon — not "these hostnames no longer need watching". And the two mistakes
+are not equally bad. A monitor left behind for a cluster that is gone complains loudly
+and gets cleaned up the same day. Monitoring that disappears quietly is discovered
+during the next outage that nobody was paged for.
+
+The uptime history is the other half of it. It is months of data that this operator did
+not create and cannot restore; a recreated monitor is a monitor with no past, which is
+useless for an SLA conversation. Deleting that as a side effect of `kubectl delete
+namespace` is not a trade worth making automatic.
+
+So when you do mean it, say so: delete the monitor group named after the cluster in
+Better Stack. One deliberate action, at the moment you actually intend it.
+
+## Two clusters must not share a name
+
+`CLUSTER_NAME` picks the monitor group, and the group is what the operator treats as
+its own. Two clusters configured with the same name will each see the other's monitors
+as belonging to routes that no longer exist, and delete them — then recreate their own,
+then delete them again, every resync, indefinitely.
+
+Nothing detects this, so it is worth saying plainly: one name per cluster.
 
 ## Versions
 
