@@ -71,8 +71,12 @@ async def reconcile(reason: str, logger) -> None:
         routes = await list_routes()
         # provider calls are blocking, so keep them off the event loop
         result = await asyncio.to_thread(run, routes, provider, cfg)
+    # logged even when nothing changed: reconciles are rare by design, and a line
+    # saying so is how you tell a working operator from a stuck one
     if any(result.values()):
         logger.info("%s: %s", reason, result)
+    else:
+        logger.info("%s: already in sync (%d route(s))", reason, len(routes))
 
 
 @kopf.on.startup()
