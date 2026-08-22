@@ -12,7 +12,10 @@ permissions:
 
 jobs:
   test:
-    runs-on: sevenlab-arc
+    # GitHub-hosted: gratis voor publieke repositories, en het houdt pull requests
+    # vanaf een fork van onze eigen clusters af. De self-hosted pool bestond alleen
+    # omdat de spending limit privérepo's blokkeerde.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,7 +26,7 @@ jobs:
 
   image:
     needs: test
-    runs-on: sevenlab-arc
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
