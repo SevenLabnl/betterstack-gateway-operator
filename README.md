@@ -62,7 +62,7 @@ one usually do — produce one monitor, not two.
 ## Installing
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/SevenLabnl/betterstack-gateway-operator/v0.2.1/deploy/operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/SevenLabnl/betterstack-gateway-operator/v0.3.0/deploy/operator.yaml
 ```
 
 Then the two things that differ per cluster, which are not in that file because one of
@@ -99,6 +99,7 @@ team that owns your monitors is enough — it does not need account-wide rights.
 | `EXPECTED_STATUS_CODES` | `200,201,202,204` | what counts as up |
 | `REGIONS` | `eu` | comma-separated, from `us,eu,as,au` |
 | `RESYNC_SECONDS` | `900` | full reconcile interval |
+| `BETTERSTACK_POLICY_ID` | — | escalation policy for monitors it creates; see below |
 | `DRY_RUN` | `false` | log what would change, change nothing |
 
 Bad values are rejected at startup rather than at the first API call, so a typo in a
@@ -112,6 +113,17 @@ ConfigMap fails visibly instead of quietly monitoring nothing.
 | `betterstack.sevenlab.nl/path` | path to request instead of `/` |
 | `betterstack.sevenlab.nl/expected-status-codes` | comma-separated, overrides the default |
 | `betterstack.sevenlab.nl/check-frequency` | seconds, overrides the default |
+
+### Alerting is not managed
+
+`BETTERSTACK_POLICY_ID` is applied when a monitor is created and never on an update, and
+nothing else about notification is set at all — not `team_wait`, not the email, SMS,
+call or push flags.
+
+A new monitor should not start out notifying whoever the account happens to default to,
+which with no escalation policy configured is the entire team. But once it exists, who
+gets woken up belongs to the people carrying the pager. A reconcile that put their
+change back every fifteen minutes would be worse than never setting it.
 
 ### A note on redirects
 

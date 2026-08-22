@@ -87,6 +87,7 @@ def monitors_for(route: dict, cfg: Config) -> list[DesiredMonitor]:
             regions=cfg.regions,
             namespace=ns,
             route=name,
+            policy_id=cfg.policy_id,
         ))
     return out
 

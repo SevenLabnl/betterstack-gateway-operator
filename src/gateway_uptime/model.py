@@ -21,6 +21,9 @@ class DesiredMonitor:
     # where it came from, for the monitor's name and for log lines
     namespace: str
     route: str
+    # Applied when the monitor is first created and never afterwards, so that whoever
+    # tunes alerting in Better Stack keeps their change.
+    policy_id: str | None = None
 
     @property
     def key(self) -> str:

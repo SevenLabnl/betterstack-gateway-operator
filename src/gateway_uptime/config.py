@@ -41,6 +41,8 @@ class Config:
     regions: tuple[str, ...] = ("eu",)
     resync_seconds: int = 900
     dry_run: bool = False
+    # Optioneel. Alleen gebruikt bij het aanmaken van een monitor — zie de provider.
+    policy_id: str | None = None
 
     @property
     def monitor_group_name(self) -> str:
@@ -99,5 +101,6 @@ def from_env(env: dict[str, str] | None = None) -> Config:
             e.get("EXPECTED_STATUS_CODES", DEFAULT_STATUS_CODES))),
         regions=regions,
         resync_seconds=int(e.get("RESYNC_SECONDS", "900")),
+        policy_id=(e.get("BETTERSTACK_POLICY_ID", "").strip() or None),
         dry_run=e.get("DRY_RUN", "false").lower() in ("1", "true", "yes"),
     )

@@ -184,3 +184,40 @@ def test_expecting_only_2xx_leaves_redirect_handling_alone():
     BetterStack("tok", "test-cluster", opener=http).create(want())
     body = [c for c in http.calls if c[0] == "POST"][0][2]
     assert "follow_redirects" not in body
+
+
+def test_the_policy_is_set_when_a_monitor_is_created():
+    http = FakeHTTP({("GET", "/monitor-groups"): GROUP_PAGE,
+                     ("POST", "/monitors"): {"data": {"id": "8"}}})
+    w = DesiredMonitor(hostname="shop.example.com", url="https://shop.example.com/",
+                       check_frequency=180, request_timeout=30,
+                       expected_status_codes=(200,), regions=("eu",),
+                       namespace="acme", route="shop", policy_id="121827")
+    BetterStack("tok", "test-cluster", opener=http).create(w)
+    body = [c for c in http.calls if c[0] == "POST"][0][2]
+    assert body["policy_id"] == 121827
+
+
+def test_the_policy_is_never_touched_on_an_update():
+    # whoever tunes alerting in Better Stack keeps their change; a reconcile every
+    # fifteen minutes must not put it back
+    http = FakeHTTP({("GET", "/monitor-groups"): GROUP_PAGE,
+                     ("PATCH", "/monitors/8"): {}})
+    w = DesiredMonitor(hostname="shop.example.com", url="https://shop.example.com/",
+                       check_frequency=60, request_timeout=30,
+                       expected_status_codes=(200,), regions=("eu",),
+                       namespace="acme", route="shop", policy_id="121827")
+    existing = ExistingMonitor(id="8", url=w.url, display_name="acme/shop",
+                               check_frequency=180, request_timeout=30,
+                               expected_status_codes=(200,), regions=("eu",))
+    BetterStack("tok", "test-cluster", opener=http).update(existing, w)
+    body = [c for c in http.calls if c[0] == "PATCH"][0][2]
+    assert "policy_id" not in body
+
+
+def test_no_policy_configured_means_none_is_sent():
+    http = FakeHTTP({("GET", "/monitor-groups"): GROUP_PAGE,
+                     ("POST", "/monitors"): {"data": {"id": "9"}}})
+    BetterStack("tok", "test-cluster", opener=http).create(want())
+    body = [c for c in http.calls if c[0] == "POST"][0][2]
+    assert "policy_id" not in body

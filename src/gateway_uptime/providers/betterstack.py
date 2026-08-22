@@ -106,7 +106,7 @@ class BetterStack:
             regions=tuple(a.get("regions") or []),
         )
 
-    def _payload(self, want: DesiredMonitor) -> dict:
+    def _payload(self, want: DesiredMonitor, creating: bool = False) -> dict:
         body = {
             "monitor_type": "expected_status_code",
             "url": want.url,
@@ -123,9 +123,14 @@ class BetterStack:
         if any(300 <= c < 400 for c in want.expected_status_codes):
             body["follow_redirects"] = False
             body["remember_cookies"] = False
-        # Deliberately absent: policy_id, team_wait, email/sms/call/push. Who gets
-        # woken up is decided in Better Stack by the people carrying the pager, and a
-        # reconcile that reset it every fifteen minutes would be worse than useless.
+        # An escalation policy is applied when the monitor is created and never on an
+        # update. A new monitor should not start out notifying everyone by default,
+        # but who gets woken up after that is a decision for the people carrying the
+        # pager — and a reconcile that reset it every fifteen minutes would be worse
+        # than useless. team_wait and email/sms/call/push are never set for the same
+        # reason.
+        if creating and want.policy_id:
+            body["policy_id"] = int(want.policy_id)
         return body
 
     # ------------------------------------------------------------------ interface
@@ -135,7 +140,7 @@ class BetterStack:
         return [self._to_existing(i) for i in items]
 
     def create(self, want: DesiredMonitor) -> str:
-        res = self._call("POST", "/monitors", self._payload(want))
+        res = self._call("POST", "/monitors", self._payload(want, creating=True))
         return str((res.get("data") or {})["id"])
 
     def update(self, existing: ExistingMonitor, want: DesiredMonitor) -> None:
