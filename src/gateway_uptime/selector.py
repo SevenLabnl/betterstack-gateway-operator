@@ -18,8 +18,39 @@ def _ints(raw: str) -> tuple[int, ...]:
     return tuple(int(p.strip()) for p in raw.split(",") if p.strip())
 
 
+def _hostnames(route: dict) -> list[str]:
+    out = []
+    for h in (route.get("spec") or {}).get("hostnames") or []:
+        h = str(h).strip().lower()
+        if h and not h.startswith("*"):
+            out.append(h)
+    return out
+
+
+def is_redirect_only(route: dict) -> bool:
+    """True when the route does nothing but redirect.
+
+    The usual :80 companion of an HTTPS route: no backend, just a RequestRedirect. It
+    claims the same hostname as the real route, so when both produce the same monitor
+    we would rather name it after the one that actually serves something.
+    """
+    rules = (route.get("spec") or {}).get("rules") or []
+    if not rules:
+        return False
+    for r in rules:
+        if r.get("backendRefs"):
+            return False
+        if not any(f.get("type") == "RequestRedirect" for f in r.get("filters") or []):
+            return False
+    return True
+
+
 def monitors_for(route: dict, cfg: Config) -> list[DesiredMonitor]:
-    """Every monitor this route should have. Empty when it should have none."""
+    """Every monitor this route asks for. Empty when it asks for none.
+
+    Note that a route asking for a monitor does not settle it: another route may claim
+    the same hostname and opt out. See monitors_for_all.
+    """
     meta = route.get("metadata") or {}
     ns, name = meta.get("namespace", ""), meta.get("name", "")
 
@@ -44,15 +75,7 @@ def monitors_for(route: dict, cfg: Config) -> list[DesiredMonitor]:
         frequency = int(raw_freq)
 
     out: list[DesiredMonitor] = []
-    for hostname in (route.get("spec") or {}).get("hostnames") or []:
-        hostname = str(hostname).strip().lower()
-        if not hostname:
-            continue
-        # A wildcard listener has no address to request. Monitoring "*.example.com"
-        # would mean inventing a hostname, and inventing one that happens to 404 is
-        # worse than not checking.
-        if hostname.startswith("*"):
-            continue
+    for hostname in _hostnames(route):
         if not forced and cfg.excluded(hostname):
             continue
         out.append(DesiredMonitor(
@@ -68,16 +91,39 @@ def monitors_for(route: dict, cfg: Config) -> list[DesiredMonitor]:
     return out
 
 
+def opted_out_hostnames(routes: list[dict]) -> set[str]:
+    """Hostnames that any route has explicitly excluded.
+
+    Opting out has to work per hostname rather than per route. A hostname is normally
+    served by two routes — the real one and its :80 redirect — and annotating only one
+    of them would leave the monitor in place under the other's name, which looks like
+    the annotation was ignored. Saying "do not monitor this" once is enough.
+    """
+    out: set[str] = set()
+    for r in routes:
+        if (_ann(r, "enabled") or "").strip().lower() in ("false", "no", "off"):
+            out.update(_hostnames(r))
+    return out
+
+
 def monitors_for_all(routes: list[dict], cfg: Config) -> list[DesiredMonitor]:
     """The complete desired set, deduplicated.
 
-    Two routes can legitimately claim the same hostname — a redirect route on :80 and
-    the real one on :443 usually do. They would produce the same URL and therefore the
-    same monitor, so the first one wins and the second is dropped rather than fighting
-    over it on every resync.
+    Two routes can legitimately claim the same hostname, so the same URL can be asked
+    for twice. The one that serves a backend wins over one that only redirects, so the
+    monitor is named after the thing being monitored rather than after whichever route
+    happened to sort first.
     """
-    seen: dict[str, DesiredMonitor] = {}
+    excluded = opted_out_hostnames(routes)
+    chosen: dict[str, tuple[bool, DesiredMonitor]] = {}
+
     for r in routes:
+        redirect_only = is_redirect_only(r)
         for m in monitors_for(r, cfg):
-            seen.setdefault(m.key, m)
-    return sorted(seen.values(), key=lambda m: m.url)
+            if m.hostname in excluded:
+                continue
+            current = chosen.get(m.key)
+            if current is None or (current[0] and not redirect_only):
+                chosen[m.key] = (redirect_only, m)
+
+    return sorted((m for _, m in chosen.values()), key=lambda m: m.url)
