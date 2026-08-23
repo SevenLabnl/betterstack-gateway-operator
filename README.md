@@ -48,16 +48,66 @@ normally the development domains — and individual routes can still opt out.
 
 ## How it decides what to monitor
 
-For each `HTTPRoute`, every hostname in `spec.hostnames` is considered:
+Every hostname on every `HTTPRoute` is a candidate. What happens to it:
 
-1. `betterstack.sevenlab.nl/enabled: "false"` on the route excludes all of its hostnames.
-2. `betterstack.sevenlab.nl/enabled: "true"` includes them, whatever rule 3 says.
-3. Otherwise a hostname is monitored unless it matches `EXCLUDE_SUFFIXES`.
-4. A wildcard hostname (`*.example.com`) is never monitored — there is no address to
-   request, and inventing one that happens to 404 is worse than not checking.
+**By default, it is monitored.** No annotation, no list to join. A production hostname
+is covered the moment a route serves it.
 
-Two routes claiming the same hostname and path — an HTTP redirect route and the HTTPS
-one usually do — produce one monitor, not two.
+**Unless it matches `EXCLUDE_SUFFIXES`.** That is where development and staging domains
+go. With `EXCLUDE_SUFFIXES=7dev.nl,7test.nl`, nothing on those domains is monitored.
+
+**Unless the route says otherwise.** Two annotations override the rules, in both
+directions:
+
+```yaml
+metadata:
+  annotations:
+    betterstack.sevenlab.nl/enabled: "true"    # monitor it even on an excluded domain
+    betterstack.sevenlab.nl/enabled: "false"   # never monitor it, excluded or not
+```
+
+### Monitoring one hostname on an excluded domain
+
+This is the common case for the second annotation. Say `7dev.nl` is excluded because it
+is full of demo environments, but `argocd.7dev.nl` is a tool you actually rely on:
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argocd-server
+  annotations:
+    betterstack.sevenlab.nl/enabled: "true"
+spec:
+  hostnames:
+  - argocd.7dev.nl
+```
+
+That one hostname is now monitored; the rest of `7dev.nl` still is not. The annotation
+beats the suffix list, always.
+
+Turning it off works the same way and beats everything, including a `"true"` on a
+different route for the same hostname. When in doubt, `"false"` wins.
+
+### Opting out applies to the hostname, not the route
+
+A hostname is usually served by two routes — the real one and a companion on `:80` that
+redirects to it. `enabled: "false"` on either of them stops the hostname being
+monitored. You do not have to find and annotate both.
+
+### Redirect routes
+
+Where a real route serves a hostname, its redirect companion is ignored: it is plumbing
+to get from `:80` to `:443`, not a thing to check. So one hostname means one monitor
+even though two routes claim it.
+
+A hostname served *only* by a redirect still gets one. `www.example.com` answering a
+308 to the apex is the whole product there, and if it stops answering you want to know.
+
+### Wildcards
+
+`*.example.com` is never monitored. There is no address to request, and inventing one
+that happens to 404 is worse than not checking.
 
 ## Installing
 
@@ -109,7 +159,7 @@ ConfigMap fails visibly instead of quietly monitoring nothing.
 
 | Annotation | Effect |
 |---|---|
-| `betterstack.sevenlab.nl/enabled` | `"true"` monitors it whatever the rules say, `"false"` never does |
+| `betterstack.sevenlab.nl/enabled` | `"true"` monitors the hostname even on an excluded domain, `"false"` never monitors it — see [how it decides](#how-it-decides-what-to-monitor) |
 | `betterstack.sevenlab.nl/path` | path to request instead of `/` |
 | `betterstack.sevenlab.nl/expected-status-codes` | comma-separated, overrides the default |
 | `betterstack.sevenlab.nl/check-frequency` | seconds, overrides the default |
@@ -125,7 +175,7 @@ which with no escalation policy configured is the entire team. But once it exist
 gets woken up belongs to the people carrying the pager. A reconcile that put their
 change back every fifteen minutes would be worse than never setting it.
 
-### A note on redirects
+### Expecting a 3xx status
 
 The default expects 2xx and follows redirects, so a hostname that only redirects is
 checked by whether a visitor ends up somewhere that works. TLS failures still surface,
@@ -167,14 +217,32 @@ namespace` is not a trade worth making automatic.
 So when you do mean it, say so: delete the monitor group named after the cluster in
 Better Stack. One deliberate action, at the moment you actually intend it.
 
-## Two clusters must not share a name
+## CLUSTER_NAME, and why it matters more than it looks
 
-`CLUSTER_NAME` picks the monitor group, and the group is what the operator treats as
-its own. Two clusters configured with the same name will each see the other's monitors
-as belonging to routes that no longer exist, and delete them — then recreate their own,
-then delete them again, every resync, indefinitely.
+`CLUSTER_NAME` is not a label. It is how the operator knows which monitors are its own.
 
-Nothing detects this, so it is worth saying plainly: one name per cluster.
+Every monitor it creates goes into a Better Stack **monitor group** with that name,
+created on first run if it does not exist. On every reconcile it reads that group back,
+compares it to the hostnames the cluster currently serves, and makes the two match. So
+the group is the record of ownership, and the name is the key to it.
+
+Three things follow.
+
+**A monitor outside the group is never touched.** Anything made by hand, or by
+something else, is invisible to the operator. It will not be updated, and it will not
+be deleted for having no route behind it.
+
+**Removing the operator leaves the group alone.** See [Uninstalling](#uninstalling).
+
+**Two clusters must never share a name.** They would share a group, and each would see
+the other's monitors as belonging to routes that no longer exist. Both delete, both
+recreate, every resync, forever — while the alerting silently follows whichever cluster
+wrote last. Nothing detects this, and the symptom (monitors flapping in and out of
+existence) does not point at the cause.
+
+The operator refuses to start without `CLUSTER_NAME` for that reason, but it cannot
+tell that a name is already in use elsewhere. Use the actual cluster name and it will
+never come up.
 
 ## Versions
 
