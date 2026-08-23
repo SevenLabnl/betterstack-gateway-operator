@@ -24,6 +24,22 @@ def _ints(raw: str) -> list[int]:
     return [int(p) for p in _csv(raw)]
 
 
+def _clock(raw: str) -> str:
+    """Normalises 01:00 to 01:00:00, which is what the API wants."""
+    raw = raw.strip()
+    if not raw:
+        return ""
+    parts = raw.split(":")
+    if len(parts) == 2:
+        parts.append("00")
+    if len(parts) != 3 or not all(p.isdigit() and len(p) == 2 for p in parts):
+        raise ConfigError("maintenance times look like 01:00 or 01:00:00, got %r" % raw)
+    h, m, sec = (int(p) for p in parts)
+    if h > 23 or m > 59 or sec > 59:
+        raise ConfigError("not a time of day: %r" % raw)
+    return ":".join(parts)
+
+
 class ConfigError(ValueError):
     """Raised for a configuration that cannot work, so it fails at start rather than
     silently monitoring nothing."""
@@ -41,6 +57,12 @@ class Config:
     regions: tuple[str, ...] = ("eu",)
     resync_seconds: int = 900
     dry_run: bool = False
+    # A window in which Better Stack does not check at all. Empty means the operator
+    # does not manage the fields, leaving whatever is already on the monitor alone.
+    maintenance_from: str = ""
+    maintenance_to: str = ""
+    maintenance_timezone: str = "UTC"
+    maintenance_days: tuple[str, ...] = ()
     # Optioneel. Alleen gebruikt bij het aanmaken van een monitor — zie de provider.
     policy_id: str | None = None
 
@@ -48,12 +70,18 @@ class Config:
     def monitor_group_name(self) -> str:
         return self.cluster_name
 
+    @property
+    def manages_maintenance(self) -> bool:
+        return bool(self.maintenance_from and self.maintenance_to)
+
     def excluded(self, hostname: str) -> bool:
         return any(hostname == s or hostname.endswith("." + s.lstrip("."))
                    for s in self.exclude_suffixes)
 
 
 VALID_REGIONS = {"us", "eu", "as", "au"}
+
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 # Better Stack only accepts these for HTTP monitors. Anything else is rejected at
 # create time, which is a confusing place to learn about a typo in a ConfigMap.
@@ -91,6 +119,19 @@ def from_env(env: dict[str, str] | None = None) -> Config:
         raise ConfigError("CHECK_FREQUENCY (%d) must be at least REQUEST_TIMEOUT (%d)"
                           % (frequency, timeout))
 
+    mf = _clock(e.get("MAINTENANCE_FROM", ""))
+    mt = _clock(e.get("MAINTENANCE_TO", ""))
+    if bool(mf) != bool(mt):
+        raise ConfigError("MAINTENANCE_FROM and MAINTENANCE_TO must be set together; "
+                          "a window with only one end is not a window")
+    days = tuple(d.lower() for d in _csv(e.get("MAINTENANCE_DAYS", "")))
+    bad = [d for d in days if d not in WEEKDAYS]
+    if bad:
+        raise ConfigError("unknown day(s) %s in MAINTENANCE_DAYS; allowed: %s"
+                          % (bad, list(WEEKDAYS)))
+    if days and not mf:
+        raise ConfigError("MAINTENANCE_DAYS without MAINTENANCE_FROM does nothing")
+
     return Config(
         token=token,
         cluster_name=cluster,
@@ -103,4 +144,9 @@ def from_env(env: dict[str, str] | None = None) -> Config:
         resync_seconds=int(e.get("RESYNC_SECONDS", "900")),
         policy_id=(e.get("BETTERSTACK_POLICY_ID", "").strip() or None),
         dry_run=e.get("DRY_RUN", "false").lower() in ("1", "true", "yes"),
+        maintenance_from=mf,
+        maintenance_to=mt,
+        maintenance_timezone=e.get("MAINTENANCE_TIMEZONE", "UTC").strip() or "UTC",
+        # no days means every day, which is what a bare "01:00 to 03:00" reads as
+        maintenance_days=days or (WEEKDAYS if mf else ()),
     )

@@ -88,6 +88,10 @@ def monitors_for(route: dict, cfg: Config) -> list[DesiredMonitor]:
             namespace=ns,
             route=name,
             policy_id=cfg.policy_id,
+            maintenance_from=cfg.maintenance_from,
+            maintenance_to=cfg.maintenance_to,
+            maintenance_timezone=cfg.maintenance_timezone,
+            maintenance_days=cfg.maintenance_days,
         ))
     return out
 

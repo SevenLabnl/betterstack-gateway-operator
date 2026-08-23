@@ -9,7 +9,7 @@ from gateway_uptime.selector import monitors_for, monitors_for_all
 CFG = Config(
     token="t",
     cluster_name="test-cluster",
-    exclude_suffixes=("7dev.nl", "7test.nl"),
+    exclude_suffixes=("dev.example.com", "staging.example.com"),
     expected_status_codes=(200, 301),
 )
 
@@ -32,17 +32,17 @@ def test_production_hostname_is_monitored():
 
 
 def test_excluded_suffix_is_skipped():
-    assert monitors_for(route(hosts=["app.7dev.nl"]), CFG) == []
+    assert monitors_for(route(hosts=["app.dev.example.com"]), CFG) == []
 
 
 def test_exclusion_matches_the_domain_itself_not_just_subdomains():
-    assert monitors_for(route(hosts=["7dev.nl"]), CFG) == []
+    assert monitors_for(route(hosts=["dev.example.com"]), CFG) == []
 
 
 def test_exclusion_does_not_match_a_lookalike_domain():
-    # not7dev.nl must not be caught by the 7dev.nl rule
-    ms = monitors_for(route(hosts=["not7dev.nl"]), CFG)
-    assert urls(ms) == ["https://not7dev.nl/"]
+    # notdev.example.com must not be caught by the dev.example.com rule
+    ms = monitors_for(route(hosts=["notdev.example.com"]), CFG)
+    assert urls(ms) == ["https://notdev.example.com/"]
 
 
 def test_wildcard_hostnames_are_never_monitored():
@@ -56,9 +56,9 @@ def test_opt_out_wins_over_everything():
 
 
 def test_opt_in_overrides_an_excluded_suffix():
-    r = route(hosts=["demo.7dev.nl"],
+    r = route(hosts=["demo.dev.example.com"],
               annotations={"betterstack.sevenlab.nl/enabled": "true"})
-    assert urls(monitors_for(r, CFG)) == ["https://demo.7dev.nl/"]
+    assert urls(monitors_for(r, CFG)) == ["https://demo.dev.example.com/"]
 
 
 def test_path_annotation_is_used_and_normalised():
@@ -205,7 +205,7 @@ def test_recognising_a_redirect_only_route():
 
 
 def test_a_path_on_the_serving_route_does_not_leave_the_redirect_behind():
-    # the case that produced two monitors for api.sluis.ai in production: the serving
+    # the case that produced two monitors for one hostname in production: the serving
     # route was told to check /healthz and its :80 companion kept claiming the root
     ms = monitors_for_all([
         backend_route("api", hosts=["api.example.com"],
@@ -216,7 +216,7 @@ def test_a_path_on_the_serving_route_does_not_leave_the_redirect_behind():
 
 
 def test_a_hostname_served_only_by_a_redirect_still_gets_one():
-    # www.sluis.ai answers 308 to the apex and serves nothing else; the redirect is the
+    # a www host answering 308 to the apex serves nothing else; the redirect is the
     # whole product there
     ms = monitors_for_all([
         redirect_route("www", hosts=["www.example.com"]),

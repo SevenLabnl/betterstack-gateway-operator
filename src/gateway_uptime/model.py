@@ -24,6 +24,11 @@ class DesiredMonitor:
     # Applied when the monitor is first created and never afterwards, so that whoever
     # tunes alerting in Better Stack keeps their change.
     policy_id: str | None = None
+    # A window in which Better Stack does not check. Empty when unmanaged.
+    maintenance_from: str = ""
+    maintenance_to: str = ""
+    maintenance_timezone: str = "UTC"
+    maintenance_days: tuple[str, ...] = ()
 
     @property
     def key(self) -> str:
@@ -55,6 +60,10 @@ class ExistingMonitor:
     request_timeout: int
     expected_status_codes: tuple[int, ...]
     regions: tuple[str, ...]
+    maintenance_from: str = ""
+    maintenance_to: str = ""
+    maintenance_timezone: str = "UTC"
+    maintenance_days: tuple[str, ...] = ()
 
     def differs_from(self, want: DesiredMonitor) -> list[str]:
         """Which managed fields disagree. Returns names so a log line can say what is
@@ -70,6 +79,14 @@ class ExistingMonitor:
             out.append("expected_status_codes")
         if sorted(self.regions) != sorted(want.regions):
             out.append("regions")
+        # Only compared when a window is configured. Without one the operator leaves
+        # the fields alone rather than clearing whatever is already there.
+        if want.maintenance_from:
+            if (self.maintenance_from, self.maintenance_to) != \
+                    (want.maintenance_from, want.maintenance_to) \
+                    or self.maintenance_timezone != want.maintenance_timezone \
+                    or sorted(self.maintenance_days) != sorted(want.maintenance_days):
+                out.append("maintenance")
         return out
 
 

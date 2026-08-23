@@ -221,3 +221,124 @@ def test_no_policy_configured_means_none_is_sent():
     BetterStack("tok", "test-cluster", opener=http).create(want())
     body = [c for c in http.calls if c[0] == "POST"][0][2]
     assert "policy_id" not in body
+
+
+# ------------------------------------------------------------------ maintenance
+# A window is a cluster-wide property, not something the operator works out for
+# itself — it has no idea which cloud it is on.
+
+def cfg_with_window(**kw):
+    from gateway_uptime.config import from_env
+    env = {"BETTERSTACK_TOKEN": "t", "CLUSTER_NAME": "c"}
+    env.update(kw)
+    return from_env(env)
+
+
+def test_a_bare_time_is_normalised_to_what_the_api_wants():
+    c = cfg_with_window(MAINTENANCE_FROM="01:00", MAINTENANCE_TO="03:00")
+    assert c.maintenance_from == "01:00:00"
+    assert c.maintenance_to == "03:00:00"
+
+
+def test_seconds_are_kept_when_given():
+    c = cfg_with_window(MAINTENANCE_FROM="01:15:30", MAINTENANCE_TO="03:00:00")
+    assert c.maintenance_from == "01:15:30"
+
+
+def test_no_days_means_every_day():
+    # "01:00 to 03:00" with nothing else reads as nightly, not as never
+    c = cfg_with_window(MAINTENANCE_FROM="01:00", MAINTENANCE_TO="03:00")
+    assert c.maintenance_days == ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def test_days_are_kept_when_given():
+    c = cfg_with_window(MAINTENANCE_FROM="01:00", MAINTENANCE_TO="03:00",
+                        MAINTENANCE_DAYS="tue,wed")
+    assert c.maintenance_days == ("tue", "wed")
+
+
+def test_no_window_configured_means_no_days_either():
+    c = cfg_with_window()
+    assert c.maintenance_days == () and not c.manages_maintenance
+
+
+def test_half_a_window_is_refused():
+    from gateway_uptime.config import ConfigError
+    with pytest.raises(ConfigError):
+        cfg_with_window(MAINTENANCE_FROM="01:00")
+
+
+def test_days_without_a_window_are_refused():
+    # otherwise it silently does nothing and looks configured
+    from gateway_uptime.config import ConfigError
+    with pytest.raises(ConfigError):
+        cfg_with_window(MAINTENANCE_DAYS="tue")
+
+
+def test_a_nonsense_day_is_refused():
+    from gateway_uptime.config import ConfigError
+    with pytest.raises(ConfigError):
+        cfg_with_window(MAINTENANCE_FROM="01:00", MAINTENANCE_TO="03:00",
+                        MAINTENANCE_DAYS="tuesday")
+
+
+def test_a_nonsense_time_is_refused():
+    from gateway_uptime.config import ConfigError
+    with pytest.raises(ConfigError):
+        cfg_with_window(MAINTENANCE_FROM="25:00", MAINTENANCE_TO="03:00")
+
+
+def test_the_window_is_sent_when_configured():
+    http = FakeHTTP({("GET", "/monitor-groups"): GROUP_PAGE,
+                     ("POST", "/monitors"): {"data": {"id": "11"}}})
+    w = DesiredMonitor(hostname="a.example.com", url="https://a.example.com/",
+                       check_frequency=180, request_timeout=30,
+                       expected_status_codes=(200,), regions=("eu",),
+                       namespace="ns", route="r",
+                       maintenance_from="01:00:00", maintenance_to="03:00:00",
+                       maintenance_timezone="Europe/Amsterdam",
+                       maintenance_days=("tue",))
+    BetterStack("tok", "test-cluster", opener=http).create(w)
+    body = [c for c in http.calls if c[0] == "POST"][0][2]
+    assert body["maintenance_from"] == "01:00:00"
+    assert body["maintenance_to"] == "03:00:00"
+    assert body["maintenance_timezone"] == "Europe/Amsterdam"
+    assert body["maintenance_days"] == ["tue"]
+
+
+def test_no_window_configured_means_the_fields_are_left_alone():
+    # someone may have set a window by hand; an operator with none configured has no
+    # business clearing it
+    http = FakeHTTP({("GET", "/monitor-groups"): GROUP_PAGE,
+                     ("POST", "/monitors"): {"data": {"id": "12"}}})
+    BetterStack("tok", "test-cluster", opener=http).create(want())
+    body = [c for c in http.calls if c[0] == "POST"][0][2]
+    assert not any(k.startswith("maintenance") for k in body)
+
+
+def test_a_changed_window_is_planned_as_an_update():
+    from gateway_uptime.model import plan
+    w = DesiredMonitor(hostname="a.example.com", url="https://a.example.com/",
+                       check_frequency=180, request_timeout=30,
+                       expected_status_codes=(200,), regions=("eu",),
+                       namespace="ns", route="r",
+                       maintenance_from="01:00:00", maintenance_to="03:00:00",
+                       maintenance_days=("tue",))
+    have = ExistingMonitor(id="1", url=w.url, display_name="a.example.com",
+                           check_frequency=180, request_timeout=30,
+                           expected_status_codes=(200,), regions=("eu",),
+                           maintenance_from="02:00:00", maintenance_to="04:00:00",
+                           maintenance_days=("tue",))
+    p = plan([w], [have])
+    assert p.update[0][2] == ["maintenance"]
+
+
+def test_an_existing_window_is_ignored_when_none_is_configured():
+    from gateway_uptime.model import plan
+    have = ExistingMonitor(id="1", url="https://shop.example.com/",
+                           display_name="shop.example.com", check_frequency=180,
+                           request_timeout=30, expected_status_codes=(200, 204),
+                           regions=("eu",),
+                           maintenance_from="02:00:00", maintenance_to="04:00:00")
+    p = plan([want()], [have])
+    assert p.empty

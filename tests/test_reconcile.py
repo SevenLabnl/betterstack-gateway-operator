@@ -9,7 +9,7 @@ from gateway_uptime.config import Config
 from gateway_uptime.model import DesiredMonitor, ExistingMonitor, plan
 from gateway_uptime.reconcile import run
 
-CFG = Config(token="t", cluster_name="c", exclude_suffixes=("7dev.nl",))
+CFG = Config(token="t", cluster_name="c", exclude_suffixes=("dev.example.com",))
 
 
 def want(url, name="team/app", freq=180, codes=(200,), regions=("eu",)):
@@ -134,7 +134,7 @@ def test_run_deletes_a_monitor_whose_route_is_gone():
 
 def test_run_ignores_excluded_hostnames():
     prov = FakeProvider()
-    run([route("acme", "dev", ["app.7dev.nl"])], prov, CFG)
+    run([route("acme", "dev", ["app.dev.example.com"])], prov, CFG)
     assert prov.created == []
 
 

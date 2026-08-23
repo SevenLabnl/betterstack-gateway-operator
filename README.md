@@ -112,7 +112,7 @@ that happens to 404 is worse than not checking.
 ## Installing
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/SevenLabnl/betterstack-gateway-operator/v0.5.0/deploy/operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/SevenLabnl/betterstack-gateway-operator/v0.6.0/deploy/operator.yaml
 ```
 
 Then the two things that differ per cluster, which are not in that file because one of
@@ -148,6 +148,10 @@ team that owns your monitors is enough — it does not need account-wide rights.
 | `REQUEST_TIMEOUT` | `30` | seconds; Better Stack allows 2, 3, 5, 10, 15, 30, 45, 60 |
 | `EXPECTED_STATUS_CODES` | `200,201,202,204` | what counts as up |
 | `REGIONS` | `eu` | comma-separated, from `us,eu,as,au` |
+| `MAINTENANCE_FROM` | — | start of a window in which nothing is checked, `01:00` |
+| `MAINTENANCE_TO` | — | end of it, `03:00` |
+| `MAINTENANCE_TIMEZONE` | `UTC` | any zone name, `Europe/Amsterdam` |
+| `MAINTENANCE_DAYS` | every day | `mon,tue,…`; only meaningful with a window set |
 | `RESYNC_SECONDS` | `900` | full reconcile interval |
 | `BETTERSTACK_POLICY_ID` | — | escalation policy for monitors it creates; see below |
 | `DRY_RUN` | `false` | log what would change, change nothing |
@@ -184,6 +188,49 @@ because they happen before the redirect does.
 If you set 3xx codes to assert the redirect itself, following is switched off
 automatically — Better Stack refuses the combination, and rightly: follow the redirect
 and you never observe the status you asked for.
+
+## Maintenance windows
+
+Most clusters have a period when disruption is expected and an alert says nothing. A
+managed control plane upgrading itself, nodes being replaced on a schedule, your own
+change window. Checks during it produce incidents nobody will act on, and a channel
+that cries wolf on a timetable is worse than no channel.
+
+```
+MAINTENANCE_FROM=01:00
+MAINTENANCE_TO=03:00
+MAINTENANCE_TIMEZONE=Europe/Amsterdam
+MAINTENANCE_DAYS=tue
+```
+
+Every monitor the operator manages gets that window. Times may be written `01:00` or
+`01:00:00`. Leaving `MAINTENANCE_DAYS` out means every day, which is how a bare
+"01:00 to 03:00" reads.
+
+**Better Stack does not check at all during the window** — it does not merely hold back
+the alert. You lose the uptime data for those hours, so a nightly two-hour window is
+two hours a day missing from any availability figure you quote. Weigh that against the
+noise before setting one across the board; a single weekday is often enough.
+
+The operator does not work the window out for itself. It has no idea which cloud it is
+running on, and guessing would be worse than asking. Wherever your provider records its
+maintenance schedule, read it there and pass it in:
+
+- **Scaleway Kapsule** — the cluster's `auto_upgrade` day and start hour
+- **GKE** — the cluster's maintenance policy window
+- **EKS** — you choose when to run upgrades, so use your own change window
+- **anything self-managed** — whenever you actually do the work
+
+### When no window is configured
+
+The four fields are left alone entirely: not sent on create, not compared on reconcile.
+A window someone set by hand in the Better Stack UI survives, because an operator that
+was never told about windows has no business clearing one.
+
+The corollary is worth knowing: removing the configuration does not remove the windows
+it already applied. Existing monitors keep theirs until you clear them yourself. That is
+the safe direction to fail in, but it does mean "I turned it off" and "it is off" are
+two different statements.
 
 ## Reconciliation
 
