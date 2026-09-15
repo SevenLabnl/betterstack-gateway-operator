@@ -342,3 +342,89 @@ def test_an_existing_window_is_ignored_when_none_is_configured():
                            maintenance_from="02:00:00", maintenance_to="04:00:00")
     p = plan([want()], [have])
     assert p.empty
+
+
+# ------------------------------------------------------------- ssl expiration
+# Not an uptime property: a certificate that stopped renewing keeps serving a valid
+# one until the day it expires, so every other check stays green right up to the
+# outage. This is the only warning that arrives while there is still time.
+
+def test_a_valid_number_of_days_is_accepted():
+    c = cfg_with_window(SSL_EXPIRATION="14")
+    assert c.ssl_expiration == 14 and c.manages_ssl_expiration
+
+
+def test_not_configured_means_unmanaged():
+    c = cfg_with_window()
+    assert c.ssl_expiration is None and not c.manages_ssl_expiration
+
+
+def test_a_number_better_stack_does_not_take_is_refused():
+    # 10 looks reasonable and is not on its list; better to fail at start than to
+    # learn about it from a rejected create call
+    from gateway_uptime.config import ConfigError
+    with pytest.raises(ConfigError):
+        cfg_with_window(SSL_EXPIRATION="10")
+
+
+def test_something_that_is_not_a_number_is_refused():
+    from gateway_uptime.config import ConfigError
+    with pytest.raises(ConfigError):
+        cfg_with_window(SSL_EXPIRATION="two weeks")
+
+
+def test_the_warning_is_sent_when_configured():
+    http = FakeHTTP({("GET", "/monitor-groups"): GROUP_PAGE,
+                     ("POST", "/monitors"): {"data": {"id": "13"}}})
+    w = DesiredMonitor(hostname="a.example.com", url="https://a.example.com/",
+                       check_frequency=180, request_timeout=30,
+                       expected_status_codes=(200,), regions=("eu",),
+                       namespace="ns", route="r", ssl_expiration=14)
+    BetterStack("tok", "test-cluster", opener=http).create(w)
+    body = [c for c in http.calls if c[0] == "POST"][0][2]
+    assert body["ssl_expiration"] == 14
+
+
+def test_not_configured_means_the_field_is_left_alone():
+    http = FakeHTTP({("GET", "/monitor-groups"): GROUP_PAGE,
+                     ("POST", "/monitors"): {"data": {"id": "14"}}})
+    BetterStack("tok", "test-cluster", opener=http).create(want())
+    body = [c for c in http.calls if c[0] == "POST"][0][2]
+    assert "ssl_expiration" not in body
+
+
+def test_a_monitor_without_the_warning_is_planned_as_an_update():
+    from gateway_uptime.model import plan
+    w = DesiredMonitor(hostname="a.example.com", url="https://a.example.com/",
+                       check_frequency=180, request_timeout=30,
+                       expected_status_codes=(200,), regions=("eu",),
+                       namespace="ns", route="r", ssl_expiration=14)
+    have = ExistingMonitor(id="1", url=w.url, display_name="a.example.com",
+                           check_frequency=180, request_timeout=30,
+                           expected_status_codes=(200,), regions=("eu",))
+    p = plan([w], [have])
+    assert p.update[0][2] == ["ssl_expiration"]
+
+
+def test_an_existing_warning_is_ignored_when_none_is_configured():
+    from gateway_uptime.model import plan
+    have = ExistingMonitor(id="1", url="https://shop.example.com/",
+                           display_name="shop.example.com", check_frequency=180,
+                           request_timeout=30, expected_status_codes=(200, 204),
+                           regions=("eu",), ssl_expiration=30)
+    p = plan([want()], [have])
+    assert p.empty
+
+
+def test_the_api_value_is_read_back():
+    http = FakeHTTP({("GET", "/monitor-groups"): GROUP_PAGE,
+                     ("GET", "/monitor-groups/77/monitors"): {
+                         "data": [{"id": "5", "attributes": {
+                             "url": "https://a.example.com/",
+                             "pronounceable_name": "a.example.com",
+                             "check_frequency": 180, "request_timeout": 30,
+                             "expected_status_codes": [200], "regions": ["eu"],
+                             "ssl_expiration": 14}}],
+                         "pagination": {"next": None}}})
+    got = BetterStack("tok", "test-cluster", opener=http).list_managed()
+    assert got[0].ssl_expiration == 14

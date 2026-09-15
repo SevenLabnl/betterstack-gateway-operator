@@ -24,6 +24,8 @@ class DesiredMonitor:
     # Applied when the monitor is first created and never afterwards, so that whoever
     # tunes alerting in Better Stack keeps their change.
     policy_id: str | None = None
+    # Days before certificate expiry to warn on. None when unmanaged.
+    ssl_expiration: int | None = None
     # A window in which Better Stack does not check. Empty when unmanaged.
     maintenance_from: str = ""
     maintenance_to: str = ""
@@ -60,6 +62,7 @@ class ExistingMonitor:
     request_timeout: int
     expected_status_codes: tuple[int, ...]
     regions: tuple[str, ...]
+    ssl_expiration: int | None = None
     maintenance_from: str = ""
     maintenance_to: str = ""
     maintenance_timezone: str = "UTC"
@@ -79,6 +82,9 @@ class ExistingMonitor:
             out.append("expected_status_codes")
         if sorted(self.regions) != sorted(want.regions):
             out.append("regions")
+        if want.ssl_expiration is not None \
+                and self.ssl_expiration != want.ssl_expiration:
+            out.append("ssl_expiration")
         # Only compared when a window is configured. Without one the operator leaves
         # the fields alone rather than clearing whatever is already there.
         if want.maintenance_from:
