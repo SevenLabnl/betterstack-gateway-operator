@@ -62,6 +62,7 @@ data:
   CHECK_FREQUENCY: "180"
   REQUEST_TIMEOUT: "30"
   REGIONS: "eu"
+  SSL_EXPIRATION: "14"
   RESYNC_SECONDS: "900"
   # Start here. Flip to "false" once the log shows the plan you expected.
   DRY_RUN: "true"

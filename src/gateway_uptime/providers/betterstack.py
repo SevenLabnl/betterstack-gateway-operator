@@ -104,6 +104,8 @@ class BetterStack:
             request_timeout=int(a.get("request_timeout") or 0),
             expected_status_codes=tuple(int(c) for c in codes),
             regions=tuple(a.get("regions") or []),
+            ssl_expiration=(int(a["ssl_expiration"])
+                            if a.get("ssl_expiration") is not None else None),
             maintenance_from=a.get("maintenance_from") or "",
             maintenance_to=a.get("maintenance_to") or "",
             maintenance_timezone=a.get("maintenance_timezone") or "UTC",
@@ -121,6 +123,8 @@ class BetterStack:
             "regions": list(want.regions),
             "monitor_group_id": int(self._ensure_group()),
         }
+        if want.ssl_expiration is not None:
+            body["ssl_expiration"] = want.ssl_expiration
         # Sent only when a window is configured, so an operator with no window set
         # never clears one that was put on by hand.
         if want.maintenance_from:

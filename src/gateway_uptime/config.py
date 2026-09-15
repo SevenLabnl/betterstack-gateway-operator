@@ -65,10 +65,16 @@ class Config:
     maintenance_days: tuple[str, ...] = ()
     # Optioneel. Alleen gebruikt bij het aanmaken van een monitor — zie de provider.
     policy_id: str | None = None
+    # Days before certificate expiry to warn on. None leaves the field unmanaged.
+    ssl_expiration: int | None = None
 
     @property
     def monitor_group_name(self) -> str:
         return self.cluster_name
+
+    @property
+    def manages_ssl_expiration(self) -> bool:
+        return self.ssl_expiration is not None
 
     @property
     def manages_maintenance(self) -> bool:
@@ -86,6 +92,10 @@ WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 # Better Stack only accepts these for HTTP monitors. Anything else is rejected at
 # create time, which is a confusing place to learn about a typo in a ConfigMap.
 VALID_TIMEOUTS = (2, 3, 5, 10, 15, 30, 45, 60)
+
+# Days before expiry that Better Stack will warn on. Its own list; anything else is
+# refused at create time.
+VALID_SSL_EXPIRATION = (1, 2, 3, 7, 14, 30, 60)
 
 
 def from_env(env: dict[str, str] | None = None) -> Config:
@@ -119,6 +129,18 @@ def from_env(env: dict[str, str] | None = None) -> Config:
         raise ConfigError("CHECK_FREQUENCY (%d) must be at least REQUEST_TIMEOUT (%d)"
                           % (frequency, timeout))
 
+    raw_ssl = e.get("SSL_EXPIRATION", "").strip()
+    ssl_expiration: int | None = None
+    if raw_ssl:
+        try:
+            ssl_expiration = int(raw_ssl)
+        except ValueError:
+            raise ConfigError("SSL_EXPIRATION must be a number of days, got %r"
+                              % raw_ssl) from None
+        if ssl_expiration not in VALID_SSL_EXPIRATION:
+            raise ConfigError("SSL_EXPIRATION must be one of %s days, got %d"
+                              % (list(VALID_SSL_EXPIRATION), ssl_expiration))
+
     mf = _clock(e.get("MAINTENANCE_FROM", ""))
     mt = _clock(e.get("MAINTENANCE_TO", ""))
     if bool(mf) != bool(mt):
@@ -143,6 +165,7 @@ def from_env(env: dict[str, str] | None = None) -> Config:
         regions=regions,
         resync_seconds=int(e.get("RESYNC_SECONDS", "900")),
         policy_id=(e.get("BETTERSTACK_POLICY_ID", "").strip() or None),
+        ssl_expiration=ssl_expiration,
         dry_run=e.get("DRY_RUN", "false").lower() in ("1", "true", "yes"),
         maintenance_from=mf,
         maintenance_to=mt,

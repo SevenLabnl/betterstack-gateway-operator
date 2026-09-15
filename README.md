@@ -148,6 +148,7 @@ team that owns your monitors is enough — it does not need account-wide rights.
 | `REQUEST_TIMEOUT` | `30` | seconds; Better Stack allows 2, 3, 5, 10, 15, 30, 45, 60 |
 | `EXPECTED_STATUS_CODES` | `200,201,202,204` | what counts as up |
 | `REGIONS` | `eu` | comma-separated, from `us,eu,as,au` |
+| `SSL_EXPIRATION` | — | days before certificate expiry to warn; `1,2,3,7,14,30,60` |
 | `MAINTENANCE_FROM` | — | start of a window in which nothing is checked, `01:00` |
 | `MAINTENANCE_TO` | — | end of it, `03:00` |
 | `MAINTENANCE_TIMEZONE` | `UTC` | any zone name, `Europe/Amsterdam` |
@@ -188,6 +189,29 @@ because they happen before the redirect does.
 If you set 3xx codes to assert the redirect itself, following is switched off
 automatically — Better Stack refuses the combination, and rightly: follow the redirect
 and you never observe the status you asked for.
+
+## Certificate expiry
+
+An uptime check says nothing about a certificate that stopped renewing. It keeps serving
+the old one, valid, right up to the hour it expires — so every check is green, and the
+first signal is the outage itself.
+
+```
+SSL_EXPIRATION=14
+```
+
+Better Stack then warns that many days ahead. Its list is `1, 2, 3, 7, 14, 30, 60`;
+anything else is refused at startup rather than by a create call later.
+
+Unset, the operator leaves the field alone, including on monitors that already have a
+value — the same rule as the maintenance window.
+
+Worth knowing what this does and does not cover. It watches the certificate on the
+hostname, so it catches a renewal that silently stopped whatever the cause. It does not
+watch hostnames with no monitor, and it warns about the consequence rather than the
+cause: by the time it fires, issuance has already been failing for a while. Where you
+can also alert on the cause — a cert-manager `Issuing` condition that has been true for
+hours, say — that fires earlier and covers more.
 
 ## Maintenance windows
 
